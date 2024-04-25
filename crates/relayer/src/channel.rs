@@ -1,5 +1,6 @@
 use core::fmt::{Display, Error as FmtError, Formatter};
 use core::time::Duration;
+use std::{sync::Mutex, thread::sleep};
 
 use ibc_proto::google::protobuf::Any;
 use serde::Serialize;
@@ -903,6 +904,18 @@ impl<ChainA: ChainHandle, ChainB: ChainHandle> Channel<ChainA, ChainB> {
         }
     }
 
+    fn lock_and_wait() {
+        static SYNC: Mutex<()> = Mutex::new(());
+
+        let lock = SYNC.lock().unwrap();
+
+        sleep(Duration::from_secs(
+            std::env::var("SLEEP_TIME_SECS").unwrap().parse().unwrap(),
+        ));
+
+        drop(lock);
+    }
+
     /// Retrieves the channel from destination and compares it
     /// against the expected channel. built from the message type [`ChannelMsgType`].
     ///
@@ -1061,6 +1074,8 @@ impl<ChainA: ChainHandle, ChainB: ChainHandle> Channel<ChainA, ChainB> {
     }
 
     pub fn build_chan_open_try_and_send(&self) -> Result<IbcEvent, ChannelError> {
+        Self::lock_and_wait();
+
         let dst_msgs = self.build_chan_open_try()?;
 
         let tm = TrackedMsgs::new_static(dst_msgs, "ChannelOpenTry");
@@ -1193,6 +1208,8 @@ impl<ChainA: ChainHandle, ChainB: ChainHandle> Channel<ChainA, ChainB> {
                 _ => Err(ChannelError::invalid_event(result.event)),
             }
         }
+
+        Self::lock_and_wait();
 
         do_build_chan_open_ack_and_send(self).map_err(|e| {
             error!("failed ChanOpenAck {}: {}", self.b_side, e);
